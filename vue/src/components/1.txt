@@ -1,0 +1,646 @@
+<template>
+  <div class="user-orders">
+    <h2>我的订单</h2>
+
+    <!-- 订单列表 -->
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+      <el-tab-pane v-for="tab in tabs" :key="tab.value" :label="tab.label" :name="tab.value">
+        <el-empty v-if="!loading && (!orderList || orderList.length === 0)" description="暂无订单" />
+
+        <template v-else>
+          <div v-if="!loading" class="order-list">
+            <el-card v-for="order in orderList" :key="order.orderNo" class="order-card" :body-style="{ padding: '0' }">
+              <div class="order-header">
+                <div class="left">
+                  <span class="order-no">订单号：{{ order.orderNo }}</span>
+                  <span class="order-time">下单时间：{{ formatDate(order.createTime) }}</span>
+                  <span v-if="order.status === 0" class="countdown-timer" :class="{ 'warning': getTimeLeft(order.createTime) <= 300 }">
+                    <el-icon><Timer /></el-icon>
+                    剩余支付时间：{{ formatTimeLeft(order.createTime) }}
+                  </span>
+                </div>
+                <div class="right">
+                  <el-tag :type="getOrderStatusType(order.status)" class="status-tag">
+                    {{ getOrderStatusLabel(order.status) }}
+                  </el-tag>
+                </div>
+              </div>
+
+              <div class="order-content">
+                <div class="movie-info">
+                  <div class="movie-poster">
+                    <el-image :src="getImageUrl(order.coverImage)" fit="cover" class="poster-image">
+                      <template #error>
+                        <div class="poster-placeholder">
+                          <el-icon>
+                            <Picture />
+                          </el-icon>
+                        </div>
+                      </template>
+                    </el-image>
+                  </div>
+                  <div class="movie-details">
+                    <h3 class="movie-title">{{ order.movieTitle }}</h3>
+                    <div class="info-row">
+                      <el-icon>
+                        <House />
+                      </el-icon>
+                      <span>{{ order.cinemaName }}</span>
+                    </div>
+                    <div class="info-row">
+                      <el-icon>
+                        <Monitor />
+                      </el-icon>
+                      <span>{{ order.hallName }}</span>
+                    </div>
+                    <div class="info-row">
+                      <el-icon>
+                        <Timer />
+                      </el-icon>
+                      <span>{{ formatDate(order.startTime) }}</span>
+                    </div>
+                    <div class="info-row">
+                      <el-icon>
+                        <SeatFilled />
+                      </el-icon>
+                      <span>{{ formatSeats(order.seatInfos) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="order-actions">
+                  <div class="price-box">
+                    <span class="price-label">总价</span>
+                    <span class="price-value">¥{{ order.amount }}</span>
+                  </div>
+                  <div class="action-buttons">
+                    <el-button v-if="order.status === 0" type="primary" size="large" @click="handlePay(order)">
+                      立即支付
+                    </el-button>
+                    <el-button v-if="order.status === 0" @click="handleCancel(order)" size="large">
+                      取消订单
+                    </el-button>
+                    <el-button v-if="order.status === 2" type="danger" link @click="handleDelete(order)" size="large">
+                      删除订单
+                    </el-button>
+                    <el-button v-if="order.status !== 0" type="primary" link @click="handleDetail(order)" size="large">
+                      查看详情
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </el-card>
+          </div>
+
+          <div class="pagination" v-if="!loading && total > 0">
+            <el-pagination 
+              v-model:current-page="currentPage" 
+              v-model:page-size="pageSize" 
+              :total="total" 
+              :page-sizes="[5, 10, 20, 50]"
+              layout="total, sizes, prev, pager, next, jumper" 
+              @size-change="handleSizeChange" 
+              @current-change="handleCurrentChange" 
+            />
+          </div>
+        </template>
+
+        <div v-if="loading" class="loading-container">
+          <el-loading :visible="true" />
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 订单详情对话框 -->
+    <el-dialog title="订单详情" v-model="detailDialogVisible" width="500px">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="订单编号">{{ currentOrder?.orderNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="电影">{{ currentOrder?.movieTitle || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="影院">{{ currentOrder?.cinemaName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="影厅">{{ currentOrder?.hallName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="场次时间">{{ formatDate(currentOrder?.startTime) }}</el-descriptions-item>
+        <el-descriptions-item label="座位">{{ formatSeats(currentOrder?.seatInfos) }}</el-descriptions-item>
+        <el-descriptions-item label="总价">￥{{ currentOrder?.amount || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="订单状态">
+          <el-tag :type="getOrderStatusType(currentOrder?.status)">
+            {{ getOrderStatusLabel(currentOrder?.status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatDate(currentOrder?.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="支付时间" v-if="currentOrder?.payTime">
+          {{ formatDate(currentOrder?.payTime) }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
+
+    <!-- 添加支付对话框 -->
+    <el-dialog title="选择支付方式" v-model="paymentDialogVisible" width="400px">
+      <div class="payment-options">
+        <el-radio-group v-model="paymentMethod">
+          <el-radio label="balance">余额支付</el-radio>
+          <el-radio label="alipay">支付宝支付</el-radio>
+        </el-radio-group>
+      </div>
+      <div class="payment-amount">
+        <span class="amount-label">支付金额：</span>
+        <span class="amount-value">¥{{ currentOrder?.amount || 0 }}</span>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="paymentDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmPayment">确认支付</el-button>
+        </span>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useUserStore } from '@/store/user'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import request from '@/utils/request'
+import dateUtils from '@/utils/dateUtils'
+import { Picture, House, Monitor, Timer, SeatFilled } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+// 状态数据
+const loading = ref(false)
+const activeTab = ref('all')
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+const orderList = ref([])
+const detailDialogVisible = ref(false)
+const currentOrder = ref({})
+const paymentDialogVisible = ref(false)
+const paymentMethod = ref('balance')
+
+// 添加当前时间的响应式引用
+const currentTime = ref(new Date().getTime())
+
+// 添加一个 Set 来记录已处理的超时订单
+const processedExpiredOrders = new Set()
+
+// 标签页配置
+const tabs = [
+  { label: '全部订单', value: 'all' },
+  { label: '待支付', value: '0' },
+  { label: '已支付', value: '1' },
+  { label: '已取消', value: '2' }
+]
+
+// 订单状态配置
+const orderStatusMap = {
+  0: { label: '待支付', type: 'warning' },
+  1: { label: '已支付', type: 'success' },
+  2: { label: '已取消', type: 'info' }
+}
+
+// 获取订单列表
+const fetchOrders = async () => {
+  loading.value = true
+  orderList.value = [] // 在开始加载前清空列表
+  try {
+    const params = {
+      currentPage: currentPage.value,
+      pageSize: pageSize.value,
+      userId: userStore.userInfo.id,
+      status: activeTab.value === 'all' ? '' : activeTab.value
+    }
+
+    const res = await request.get('/order/page', params, {
+      showDefaultMsg: false,
+      errorMsg: '获取订单列表失败'
+    })
+    orderList.value = res.records
+    total.value = res.total
+  } catch (error) {
+    orderList.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+// 获取订单状态标签
+const getOrderStatusLabel = (status) => {
+  return orderStatusMap[status]?.label || '未知'
+}
+
+// 获取订单状态类型
+const getOrderStatusType = (status) => {
+  return orderStatusMap[status]?.type || 'default'
+}
+
+// 格式化日期
+const formatDate = (date) => {
+  return date ? dateUtils.format(date, 'YYYY-MM-DD HH:mm:ss') : '-'
+}
+
+// 支付订单
+const handlePay = (order) => {
+  currentOrder.value = order
+  paymentDialogVisible.value = true
+}
+
+// 添加确认支付函数
+const confirmPayment = async () => {
+  if (!currentOrder.value) return
+
+  try {
+    if (paymentMethod.value === 'alipay') {
+      // 支付宝支付
+      window.open(`/api/alipay/pay/${currentOrder.value.orderNo}`, '_blank')
+    } else {
+      // 余额支付
+      await request.post(`/order/${currentOrder.value.orderNo}/pay`, {
+        paymentMethod: 'balance'
+      }, {
+        successMsg: '支付成功',
+        errorMsg: '支付失败，请重试',
+        onSuccess: () => {
+          paymentDialogVisible.value = false
+          fetchOrders()
+        }
+      })
+    }
+  } catch (error) {
+    console.error('支付失败:', error)
+  }
+}
+
+// 取消订单
+const handleCancel = async (order) => {
+  try {
+    await ElMessageBox.confirm('确认取消该订单吗？', '提示', {
+      type: 'warning'
+    })
+
+    await request.post(`/order/${order.orderNo}/cancel`, null, {
+      successMsg: '订单已取消',
+      errorMsg: '取消订单失败',
+      onSuccess: () => {
+        fetchOrders()
+      }
+    })
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('取消订单失败:', error)
+    }
+  }
+}
+
+// 查看详情
+const handleDetail = async (order) => {
+  try {
+    const res = await request.get(`/order/${order.orderNo}`, null, {
+      showDefaultMsg: false,
+      errorMsg: '获取订单详情失败',
+      onSuccess: (data) => {
+        currentOrder.value = data
+        detailDialogVisible.value = true
+      }
+    })
+  } catch (error) {
+    console.error('获取订单详情失败:', error)
+  }
+}
+
+// 删除订单
+const handleDelete = async (order) => {
+  try {
+    await ElMessageBox.confirm('确认删除该订单吗？此操作不可恢复', '提示', {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger'
+    })
+
+    await request.delete(`/order/${order.orderNo}`, {
+      successMsg: '订单删除成功',
+      errorMsg: '删除订单失败',
+      onSuccess: () => {
+        fetchOrders()
+      }
+    })
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除订单失败:', error)
+    }
+  }
+}
+
+// 分页处理
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  fetchOrders()
+}
+
+const handleCurrentChange = (val) => {
+  currentPage.value = val
+  fetchOrders()
+}
+
+// 标签页切换
+const handleTabChange = () => {
+  currentPage.value = 1
+  orderList.value = [] // 清空当前列表
+  total.value = 0 // 重置总数
+  fetchOrders()
+}
+
+// 更新格式化座位显示的方法
+const formatSeats = (seatInfos) => {
+  if (!seatInfos || !seatInfos.length) return '-'
+  return seatInfos
+    .map(seat => `${seat.rowNum}排${seat.columnNum}座`)
+    .join('、')
+}
+
+// 添加获取图片URL的方法
+const getImageUrl = (url) => {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  return `/api${url}`
+}
+
+// 修改计算剩余时间的函数，使用currentTime
+const getTimeLeft = (createTime) => {
+  if (!createTime) return 0
+  const created = new Date(createTime).getTime()
+  const timeLimit = 15 * 60 * 1000 // 15分钟转换为毫秒
+  const timeLeft = timeLimit - (currentTime.value - created)
+  return Math.max(0, Math.floor(timeLeft / 1000)) // 返回剩余秒数
+}
+
+// 格式化剩余时间显示
+const formatTimeLeft = (createTime) => {
+  const seconds = getTimeLeft(createTime)
+  if (seconds <= 0) return '已超时'
+  
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}分${remainingSeconds}秒`
+}
+
+// 修改定时刷新逻辑
+let timer = null
+
+onMounted(() => {
+  fetchOrders()
+  // 启动定时器，每秒更新当前时间和检查订单状态
+  timer = setInterval(() => {
+    currentTime.value = new Date().getTime() // 更新当前时间
+    
+    const hasUnpaidOrders = orderList.value.some(order => order.status === 0)
+    if (hasUnpaidOrders) {
+      // 检查是否有新的超时订单
+      const newExpiredOrders = orderList.value.filter(order => 
+        order.status === 0 && 
+        getTimeLeft(order.createTime) <= 0 && 
+        !processedExpiredOrders.has(order.orderNo)
+      )
+      
+      if (newExpiredOrders.length > 0) {
+        // 记录新的超时订单
+        newExpiredOrders.forEach(order => {
+          processedExpiredOrders.add(order.orderNo)
+        })
+        fetchOrders() // 刷新订单列表
+      }
+    }
+  }, 1000)
+})
+
+// 在组件卸载时清除数据
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+  }
+  processedExpiredOrders.clear()
+})
+</script>
+
+<style lang="scss" scoped>
+.user-orders {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+
+  h2 {
+    margin-bottom: 20px;
+  }
+}
+
+.order-list {
+  .order-card {
+    margin-bottom: 20px;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+
+    &:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .order-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #ebeef5;
+
+      .left {
+        .order-no {
+          font-size: 14px;
+          color: #606266;
+          margin-right: 24px;
+        }
+
+        .order-time {
+          font-size: 14px;
+          color: #909399;
+        }
+
+        .countdown-timer {
+          margin-left: 24px;
+          font-size: 14px;
+          color: #409EFF;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          
+          &.warning {
+            color: #F56C6C;
+            animation: blink 1s infinite;
+          }
+          
+          .el-icon {
+            font-size: 16px;
+          }
+        }
+      }
+
+      .status-tag {
+        font-size: 13px;
+        padding: 0 12px;
+        height: 28px;
+        line-height: 26px;
+      }
+    }
+
+    .order-content {
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: stretch;
+      gap: 20px;
+
+      .movie-info {
+        display: flex;
+        gap: 20px;
+        flex: 1;
+
+        .movie-poster {
+          width: 120px;
+          height: 168px;
+          border-radius: 4px;
+          overflow: hidden;
+          flex-shrink: 0;
+
+          .poster-image {
+            width: 100%;
+            height: 100%;
+          }
+
+          .poster-placeholder {
+            width: 100%;
+            height: 100%;
+            background-color: #f5f7fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #909399;
+            font-size: 24px;
+          }
+        }
+
+        .movie-details {
+          flex: 1;
+
+          .movie-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #303133;
+            margin: 0 0 16px;
+          }
+
+          .info-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            color: #606266;
+            font-size: 14px;
+
+            .el-icon {
+              margin-right: 8px;
+              font-size: 16px;
+              color: #909399;
+            }
+          }
+        }
+      }
+
+      .order-actions {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: flex-end;
+        min-width: 180px;
+        padding-left: 20px;
+        border-left: 1px solid #ebeef5;
+
+        .price-box {
+          text-align: right;
+          margin-bottom: 20px;
+
+          .price-label {
+            font-size: 14px;
+            color: #909399;
+            margin-right: 8px;
+          }
+
+          .price-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #f56c6c;
+          }
+        }
+
+        .action-buttons {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          width: 100%;
+
+          .el-button {
+            width: 100%;
+            margin-left: 0;
+          }
+        }
+      }
+    }
+  }
+}
+
+.pagination {
+  margin-top: 30px;
+  padding: 0 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+.payment-options {
+  margin-bottom: 20px;
+}
+
+.payment-amount {
+  text-align: center;
+  margin: 20px 0;
+  
+  .amount-label {
+    font-size: 16px;
+    color: #606266;
+  }
+  
+  .amount-value {
+    font-size: 24px;
+    color: #f56c6c;
+    font-weight: bold;
+  }
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+</style> 
