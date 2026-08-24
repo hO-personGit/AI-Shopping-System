@@ -7,10 +7,10 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
- * Web配置�?
- * 用于配置Spring MVC的核心行为，包括�?
+ * Web配置类
+ * 用于配置Spring MVC的核心行为，包括：
  * - REST API的统一路径前缀
- * - JWT认证拦截�?
+ * - JWT认证拦截器
  * - 请求路径匹配规则
  */
 @Configuration
@@ -23,7 +23,7 @@ public class WebConfig implements WebMvcConfigurer {
      * 为所有带有@RestController注解的控制器类添加统一的路径前缀
      * 这样可以将API接口与其他Web资源区分开
      *
-     * @param configurer 路径匹配配置�?
+     * @param configurer 路径匹配配置器
      */
 
     @Override
