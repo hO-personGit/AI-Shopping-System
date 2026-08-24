@@ -29,14 +29,14 @@ public class RecommendService {
     @Autowired
     private ProductMapper productMapper;
 
-    // 计算用户相似度矩�?
+    // 计算用户相似度矩阵
     private Map<Long, Map<Long, Double>> calculateUserSimilarity() {
         // 构建用户-商品行为矩阵
         Map<Long, Set<Long>> userProductMap = new HashMap<>();
         
-        // 获取所有订单数据（已完成的订单�?
+        // 获取所有订单数据（已完成的订单）
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
-        orderWrapper.eq(Order::getStatus, 3); // 已完成状�?
+        orderWrapper.eq(Order::getStatus, 3); // 已完成状态
         List<Order> orders = orderMapper.selectList(orderWrapper);
         
         // 获取所有收藏数据（有效的收藏）
@@ -56,7 +56,7 @@ public class RecommendService {
                          .add(favorite.getProductId());
         }
 
-        // 计算用户相似�?
+        // 计算用户相似度
         Map<Long, Map<Long, Double>> similarityMatrix = new HashMap<>();
         List<Long> userIds = new ArrayList<>(userProductMap.keySet());
 
@@ -80,7 +80,7 @@ public class RecommendService {
         return similarityMatrix;
     }
 
-    // 计算余弦相似�?
+    // 计算余弦相似度
     private double calculateCosineSimilarity(Set<Long> set1, Set<Long> set2) {
         if (set1 == null || set2 == null || set1.isEmpty() || set2.isEmpty()) {
             return 0.0;
@@ -90,21 +90,21 @@ public class RecommendService {
         Set<Long> intersection = new HashSet<>(set1);
         intersection.retainAll(set2);
 
-        // 添加最小阈�?
+        // 添加最小阈值
         if (intersection.isEmpty()) {
             return 0.0;
         }
 
-        // 计算余弦相似�?- 交集大小作为点积，除以两个集合大小的平方根乘�?
+        // 计算余弦相似度- 交集大小作为点积，除以两个集合大小的平方根乘积
         double numerator = intersection.size();
         double denominator = Math.sqrt(set1.size()) * Math.sqrt(set2.size());
         double similarity = numerator / denominator;
         
-        LOGGER.debug("计算相似�? set1={}, set2={}, similarity={}", set1, set2, similarity);
+        LOGGER.debug("计算相似度 set1={}, set2={}, similarity={}", set1, set2, similarity);
         return similarity;
     }
 
-    // 为指定用户生成推�?
+    // 为指定用户生成推荐
     public Result<?> generateRecommendations(Long userId) {
         try {
             // 获取用户的订单和收藏数据
@@ -115,10 +115,10 @@ public class RecommendService {
 
             LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
             favoriteWrapper.eq(Favorite::getUserId, userId)
-                          .eq(Favorite::getStatus, 1); // 有效的收�?
+                          .eq(Favorite::getStatus, 1); // 有效的收藏
             List<Favorite> userFavorites = favoriteMapper.selectList(favoriteWrapper);
 
-            // 获取用户的商品集�?
+            // 获取用户的商品集合
             Set<Long> userProducts = new HashSet<>();
             userOrders.forEach(order -> userProducts.add(order.getProductId()));
             userFavorites.forEach(favorite -> userProducts.add(favorite.getProductId()));
@@ -127,25 +127,25 @@ public class RecommendService {
                 LOGGER.warn("用户 {} 没有任何订单或收藏记录", userId);
             }
 
-            // 获取用户相似度矩�?
+            // 获取用户相似度矩阵
             Map<Long, Map<Long, Double>> similarityMatrix = calculateUserSimilarity();
 
             // 获取相似用户
             Map<Long, Double> similarUsers = new HashMap<>();
-            // 获取当前用户与其他用户的相似�?
+            // 获取当前用户与其他用户的相似度
             if (similarityMatrix.containsKey(userId)) {
                 similarUsers.putAll(similarityMatrix.get(userId));
             }
-            // 获取其他用户与当前用户的相似�?
+            // 获取其他用户与当前用户的相似度
             for (Map.Entry<Long, Map<Long, Double>> entry : similarityMatrix.entrySet()) {
                 if (entry.getValue().containsKey(userId)) {
                     similarUsers.put(entry.getKey(), entry.getValue().get(userId));
                 }
             }
 
-            // 动态调整相似度阈�?
+            // 动态调整相似度阈值
             double similarityThreshold;
-            if (userProducts.size() < 3) { // 新用�?
+            if (userProducts.size() < 3) { // 新用户
                 similarityThreshold = 0.2;
             } else if (userProducts.size() > 10) { // 活跃用户
                 similarityThreshold = 0.4;
@@ -153,7 +153,7 @@ public class RecommendService {
                 similarityThreshold = 0.3;
             }
 
-            // 过滤和排序相似用�?
+            // 过滤和排序相似用户
             similarUsers = similarUsers.entrySet()
                 .stream()
                 .filter(entry -> entry.getValue() >= similarityThreshold)
@@ -180,7 +180,7 @@ public class RecommendService {
                         .eq(Favorite::getStatus, 1)
                 );
 
-                // 计算推荐分数（订单权�?，收藏权�?�?
+                // 计算推荐分数（订单权重，收藏权重）
                 for (Order order : similarUserOrders) {
                     if (!userProducts.contains(order.getProductId())) {
                         productScores.merge(order.getProductId(), similarity * 2, Double::sum);
@@ -234,7 +234,7 @@ public class RecommendService {
                 .distinct()
                 .toList();
 
-            // 为每个用户生成推�?
+            // 为每个用户生成推荐
             for (Long userId : userIds) {
                 generateRecommendations(userId);
             }

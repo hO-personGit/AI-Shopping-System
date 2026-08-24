@@ -41,6 +41,9 @@ public class OrderService {
     @Autowired
     private AddressMapper addressMapper;
 
+    @Autowired
+    private org.example.springboot.util.RedisLockUtil redisLockUtil;
+
 
 
     public Result<?> createOrder(Order order) {
@@ -256,30 +259,38 @@ public class OrderService {
     }
     @Transactional
     public Result<?> payOrder(Long id){
-
+        // 分布式锁防超卖：同一商品维度加锁，串行化扣减库存与销量
+        String lockKey = "lock:order:pay:product:" + (id == null ? "unknown" : id);
+        String requestId = redisLockUtil.tryLock(lockKey, 10);
+        if (requestId == null) {
+            LOGGER.warn("获取支付锁失败，订单ID：{}，请稍后重试", id);
+            return Result.error("-1", "系统繁忙，请稍后重试");
+        }
+        try {
             Order order = orderMapper.selectById(id);
             if (order == null) {
                 return Result.error("-1", "未找到订单");
-            }else{
-
-                Product product=productMapper.selectById(order.getProductId());
-                if (product!=null){
-                    if(product.getStock()<order.getQuantity()){
+            } else {
+                Product product = productMapper.selectById(order.getProductId());
+                if (product != null) {
+                    if (product.getStock() < order.getQuantity()) {
                         return Result.error("-1", "库存不足");
                     }
-                    product.setSalesCount(product.getSalesCount()+order.getQuantity());
-                    product.setStock(product.getStock()-order.getQuantity());
+                    product.setSalesCount(product.getSalesCount() + order.getQuantity());
+                    product.setStock(product.getStock() - order.getQuantity());
                     order.setStatus(1);
                     int res = productMapper.updateById(product);
 
-                    if(res<=0){
-                        return  Result.error("-1","支付异常");
+                    if (res <= 0) {
+                        return Result.error("-1", "支付异常");
                     }
-                    updateOrder(order.getId(),order);
+                    updateOrder(order.getId(), order);
                 }
-
             }
-        return Result.success();
+            return Result.success();
+        } finally {
+            redisLockUtil.unlock(lockKey, requestId);
+        }
     }
 
     public Result<?> updateOrderAddress(String name, Long id,String address, String phone) {

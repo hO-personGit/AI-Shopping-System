@@ -24,7 +24,7 @@ public class NoticeController {
     public static final Logger LOGGER = LoggerFactory.getLogger(NoticeController.class);
 
     /**
-     * 获取所有文�?
+     * 获取所有文章
      * @return 文章列表
      */
     @GetMapping
@@ -38,7 +38,7 @@ public class NoticeController {
     public Result<?> getWithLimit(@RequestParam(defaultValue = "10") Integer count){
         LOGGER.info("limit:"+count);
         QueryWrapper<Notice> queryWrapper = new QueryWrapper<>();
-        // 按时间字段由近到远排�?
+        // 按时间字段由近到远排序
         queryWrapper.orderByDesc("time");
     Page<Notice> page = new Page<>(1, count);
         IPage<Notice> resultPage = noticeMapper.selectPage(page, queryWrapper);
@@ -50,7 +50,7 @@ public class NoticeController {
     }
     @GetMapping("/page")
     public Result<?> getNoticesByPage(
-            @RequestParam(defaultValue = "") String title, // 查询条件，名�?
+            @RequestParam(defaultValue = "") String title, // 查询条件，名称
             @RequestParam(defaultValue = "") Integer currentPage, // 当前页码
             @RequestParam(defaultValue = "") Integer size// 每页条数
 
@@ -65,7 +65,7 @@ public class NoticeController {
         Page<Notice> resultPage = noticeMapper.selectPage(new Page<>(currentPage, size), wrappers);
 
 
-        // 将分页结果封装到Result对象中返�?
+        // 将分页结果封装到Result对象中返回
         return Result.success(resultPage);
     }
     /**
