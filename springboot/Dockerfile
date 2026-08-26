@@ -6,7 +6,9 @@ COPY pom.xml .
 # 先下载依赖缓存
 RUN mvn -B dependency:go-offline || true
 COPY src ./src
-# 使用示例配置占位（真实配置通过环境变量注入），跳过测试打包
+# 用示例配置生成可启动配置（真实参数通过容器环境变量覆盖）
+RUN cp src/main/resources/application-example.properties src/main/resources/application.properties
+# 跳过测试打包（测试在 CI 中独立执行）
 RUN mvn -B package -DskipTests
 
 # Stage 2: 精简运行镜像
