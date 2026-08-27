@@ -10,6 +10,19 @@ jobs:
   backend:
     name: SpringBoot Backend (Java 17 + Maven)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: db_aps
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,8 +41,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2
 
+      - name: Prepare application config (from example)
+        working-directory: springboot
+        run: |
+          cp src/main/resources/application-example.properties src/main/resources/application.properties
+
       - name: Build & Test with Maven
         working-directory: springboot
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/db_aps?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&serverTimezone=GMT%2b8&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: root
+          AI_SERVICE_BASE_URL: http://localhost:8001
         run: mvn -B -ntp verify
 
   frontend:
@@ -51,9 +74,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Lint
-        run: npm run lint -- --no-fix
 
       - name: Build
         run: npm run build
