@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_model: str = "qwen-plus"
     llm_timeout: int = 40
+
+    # 检索：hybrid（向量+关键词多路召回）/ vector / keyword
+    retrieval_mode: str = "hybrid"
+    retrieval_top_k: int = 5
+    hybrid_vector_weight: float = 0.6
+    hybrid_keyword_weight: float = 0.4
+
+    # 缓存：问答结果 TTL（秒）
+    cache_ttl_seconds: int = 600
+    cache_max_size: int = 256
+
+    # 多轮对话记忆
+    memory_max_turns: int = 6
+    memory_ttl_seconds: int = 1800
+    memory_max_sessions: int = 1000
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

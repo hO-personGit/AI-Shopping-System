@@ -1,32 +1,113 @@
-﻿from typing import Any, Dict, List
+"""AI 商品服务：整合智能导购（多轮对话 + 混合检索 + Agent 工具 + 缓存 + 流式）、文案生成、销售分析。"""
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any, Dict, List, Optional
 
 from app.config import settings
-from app.schemas import CopywritingRequest, CopywritingResponse, GuideRequest, GuideResponse, ProductRecommendation, SalesAnalysisRequest, SalesAnalysisResponse
+from app.schemas import (CopywritingRequest, CopywritingResponse, GuideRequest,
+                         GuideResponse, ProductRecommendation,
+                         SalesAnalysisRequest, SalesAnalysisResponse)
+from app.services.cache import TTLCache, answer_cache
 from app.services.db import ProductRepository
 from app.services.llm_client import llm_client
-from app.services.prompts import copywriting_prompt, guide_prompt, sales_analysis_prompt
+from app.services.memory import memory
+from app.services.prompts import copywriting_prompt, function_calling_prompt, guide_prompt, sales_analysis_prompt
+from app.services.tools import get_tool_executor, tool_calls_to_text
 from app.services.vector_store import product_vector_store
+
+logger = logging.getLogger("ai-service")
+
+
+def _resolve_session(request: GuideRequest) -> str:
+    """会话 id 解析：优先 session_id，其次 userId，最后取 query 摘要。"""
+    if request.session_id:
+        return request.session_id
+    if request.user_id:
+        return f"user-{request.user_id}"
+    return "anonymous"
 
 
 class ProductAIService:
     def __init__(self):
         self.repository = ProductRepository()
+        self.tool_executor = get_tool_executor()
+
+    # ================= 智能导购 =================
 
     def smart_guide(self, request: GuideRequest) -> GuideResponse:
-        candidates = product_vector_store.search(request.query, request.top_k)
+        session_id = _resolve_session(request)
+        # 1) 问答缓存：同 session 同问题直接命中，降本提速
+        cache_key = TTLCache.make_key(request.query, request.top_k, scope=f"guide:{session_id}")
+        cached = answer_cache.get(cache_key)
+        if cached is not None:
+            logger.info("AI 导购命中缓存 key=%s", cache_key)
+            return cached.model_copy(update={"cached": True})
+
+        start = time.time()
+        # 2) 多轮对话历史
+        history = memory.get_history(session_id)
+        # 3) 混合检索（向量 + 关键词多路召回 + RRF 融合）
+        candidates = product_vector_store.hybrid_search(request.query, request.top_k)
+        # 4) Agent 工具调用（Function Calling）
+        tool_calls = self._run_tools(request.query, history, candidates)
+        tool_text = tool_calls_to_text(tool_calls)
+        # 5) 生成回答
         fallback = self._guide_fallback(request.query, candidates)
-        prompt = guide_prompt(request.query, candidates)
-        response = llm_client.generate_json(prompt, fallback)
+        response = llm_client.generate_json(
+            guide_prompt(request.query, candidates, history, tool_text), fallback
+        )
         merged = self._merge_recommendations(response.get("recommendations", []), candidates)
         result = GuideResponse(
             answer=response.get("answer") or fallback["answer"],
             recommendations=merged,
             source=settings.llm_provider,
+            tool_calls=[c.get("name") for c in tool_calls],
+            cached=False,
         )
-        self.repository.log_ai_call("AI智能导购", request.model_dump(by_alias=True), result.model_dump(by_alias=True), settings.llm_provider, True)
+        # 6) 记忆 + 日志 + 缓存
+        memory.add_turn(session_id, request.query, result.answer)
+        self._log("AI智能导购", request.model_dump(by_alias=True), result.model_dump(by_alias=True),
+                  success=True, elapsed=time.time() - start)
+        answer_cache.set(cache_key, result)
         return result
 
+    # ================= 工具调用（Function Calling） =================
+
+    def _run_tools(self, query: str, history: List[Dict[str, str]],
+                   candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """基于 Function Calling 决策并执行工具，mock 模式退化为规则路由。"""
+        tool_calls: List[Dict[str, Any]] = []
+        decision = llm_client.call_with_tools(
+            function_calling_prompt(query, history), self.tool_executor.schemas()
+        )
+        if decision["tool_calls"]:
+            for call in decision["tool_calls"]:
+                output = self.tool_executor.execute(call["name"], call["arguments"])
+                tool_calls.append({"name": call["name"], "arguments": call["arguments"], "output": output})
+            return tool_calls
+
+        # mock / 未触发工具：规则路由，演示 Agent 工具能力
+        rule = self._rule_route(query, candidates)
+        if rule is not None:
+            output = self.tool_executor.execute(rule["name"], rule["arguments"])
+            tool_calls.append({"name": rule["name"], "arguments": rule["arguments"], "output": output})
+        return tool_calls
+
+    def _rule_route(self, query: str, candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        q = query.lower()
+        if any(k in q for k in ("热销", "卖得", "排行", "top", "最好卖")):
+            return {"name": "get_top_selling", "arguments": {"top_k": 5}}
+        if any(k in q for k in ("库存", "有货", "还有", "补货", "剩")):
+            if candidates:
+                return {"name": "query_stock", "arguments": {"product_id": candidates[0].get("id")}}
+        return None
+
+    # ================= 文案生成 =================
+
     def generate_copywriting(self, request: CopywritingRequest) -> CopywritingResponse:
+        start = time.time()
         product = request.model_dump(by_alias=True)
         fallback = self._copywriting_fallback(product)
         response = llm_client.generate_json(copywriting_prompt(product), fallback)
@@ -37,10 +118,13 @@ class ProductAIService:
             slogan=response.get("slogan") or fallback["slogan"],
             source=settings.llm_provider,
         )
-        self.repository.log_ai_call("AI商品文案生成", product, result.model_dump(), settings.llm_provider, True)
+        self._log("AI商品文案生成", product, result.model_dump(), True, time.time() - start)
         return result
 
+    # ================= 销售分析 =================
+
     def analyze_sales(self, request: SalesAnalysisRequest) -> SalesAnalysisResponse:
+        start = time.time()
         sales_data = request.sales_data or {}
         fallback = self._sales_fallback(sales_data)
         response = llm_client.generate_json(sales_analysis_prompt(sales_data), fallback)
@@ -52,8 +136,10 @@ class ProductAIService:
             summary=response.get("summary") or fallback["summary"],
             source=settings.llm_provider,
         )
-        self.repository.log_ai_call("AI销售分析", sales_data, result.model_dump(by_alias=True), settings.llm_provider, True)
+        self._log("AI销售分析", sales_data, result.model_dump(by_alias=True), True, time.time() - start)
         return result
+
+    # ================= 兜底与工具方法 =================
 
     def _guide_fallback(self, query: str, candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         names = "、".join([item.get("name", "") for item in candidates[:3]]) or "当前在售商品"
@@ -64,7 +150,8 @@ class ProductAIService:
             ],
         }
 
-    def _merge_recommendations(self, llm_items: List[Dict[str, Any]], candidates: List[Dict[str, Any]]) -> List[ProductRecommendation]:
+    def _merge_recommendations(self, llm_items: List[Dict[str, Any]],
+                               candidates: List[Dict[str, Any]]) -> List[ProductRecommendation]:
         reason_map = {str(item.get("id")): item.get("reason", "") for item in llm_items if isinstance(item, dict)}
         result = []
         for item in candidates:
@@ -107,6 +194,19 @@ class ProductAIService:
             "salesTrendSummary": "结合月度订单和销售额变化，重点关注增长率、客单价和品类结构是否稳定。",
             "summary": "当前经营分析已完成，可将热销商品运营、库存预警和补货计划作为下一步重点。",
         }
+
+    def _log(self, function_name: str, request_data: Dict[str, Any], response_data: Dict[str, Any],
+             success: bool, elapsed: float) -> None:
+        """结构化日志 + 入库（入库失败不阻塞业务）。"""
+        logger.info(
+            "ai_call name=%s elapsed=%.3fs provider=%s success=%s",
+            function_name, elapsed, settings.llm_provider, success,
+        )
+        try:
+            self.repository.log_ai_call(function_name, request_data, response_data,
+                                        settings.llm_provider, success)
+        except Exception:
+            pass
 
 
 product_ai_service = ProductAIService()
