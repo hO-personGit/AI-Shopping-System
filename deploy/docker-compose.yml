@@ -43,6 +43,25 @@ services:
       retries: 5
     networks: [aps-net]
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: aps-rabbitmq
+    hostname: aps-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # 管理台 http://localhost:15672 (guest/guest)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [aps-net]
+
   ai-service:
     build: ../ai-service
     container_name: aps-ai
@@ -77,6 +96,10 @@ services:
       SPRING_CACHE_TYPE: caffeine
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      # MQ 异步下单：启用后后端连接 rabbitmq 服务
+      APP_MQ_ENABLED: ${APP_MQ_ENABLED:-false}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
     ports:
       - "1234:1234"
     depends_on:
@@ -84,6 +107,8 @@ services:
         condition: service_healthy
       ai-service:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks: [aps-net]
 
   frontend:
@@ -99,6 +124,7 @@ volumes:
   mysql-data:
   redis-data:
   faiss-data:
+  rabbitmq-data:
 
 networks:
   aps-net:
