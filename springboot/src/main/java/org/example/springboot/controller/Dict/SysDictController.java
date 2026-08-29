@@ -63,7 +63,7 @@ public class SysDictController {
     }
 
     /**
-     * 查询所有字典类�?
+     * 查询所有字典类型
      * @return
      */
     @GetMapping("/findAll")

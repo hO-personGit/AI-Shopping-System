@@ -1,0 +1,105 @@
+# ============================================================
+# AI 智能商品销售系统 · 一键编排
+# 服务：MySQL + Redis + AI微服务 + SpringBoot后端 + Vue前端
+# 使用：docker compose up -d --build
+# 访问：前端 http://localhost:80 · 后端 http://localhost:1234
+#       AI服务 http://localhost:8001/docs
+# ============================================================
+name: ai-shopping-system
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: aps-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_aps
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../数据库/db_aps.sql:/docker-entrypoint-initdb.d/db_aps.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [aps-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: aps-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [aps-net]
+
+  ai-service:
+    build: ../ai-service
+    container_name: aps-ai
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: db_aps
+      FAISS_INDEX_PATH: /app/data/product_faiss
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}   # 接入真实模型时改为 dashscope 等并配置 KEY
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-qwen-plus}
+      RETRIEVAL_MODE: hybrid
+    ports:
+      - "8001:8001"
+    volumes:
+      - faiss-data:/app/data/product_faiss
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [aps-net]
+
+  backend:
+    build: ../springboot
+    container_name: aps-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/db_aps?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&serverTimezone=GMT%2b8&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      AI_SERVICE_BASE_URL: http://ai-service:8001
+      SPRING_CACHE_TYPE: caffeine
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    ports:
+      - "1234:1234"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+    networks: [aps-net]
+
+  frontend:
+    build: ../vue
+    container_name: aps-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks: [aps-net]
+
+volumes:
+  mysql-data:
+  redis-data:
+  faiss-data:
+
+networks:
+  aps-net:
+    driver: bridge
