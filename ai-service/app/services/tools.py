@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Callable, Dict, List
 
 from app.services.db import ProductRepository
@@ -126,11 +128,20 @@ def get_tool_executor() -> ToolExecutor:
     return _tool_executor
 
 
+def _json_default(obj: Any) -> Any:
+    """JSON 兜底序列化：处理 Decimal / datetime 等类型，避免工具结果序列化失败。"""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return str(obj)
+
+
 def tool_calls_to_text(tool_calls: List[Dict[str, Any]]) -> str:
     """把工具调用结果格式化为可注入 Prompt 的文本。"""
     lines = []
     for call in tool_calls:
         name = call.get("name", "")
         output = call.get("output", {})
-        lines.append(f"【工具 {name} 结果】\n{json.dumps(output, ensure_ascii=False)[:800]}")
+        lines.append(f"【工具 {name} 结果】\n{json.dumps(output, ensure_ascii=False, default=_json_default)[:800]}")
     return "\n".join(lines)
