@@ -11,9 +11,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Spring Security安全配置�?
+ * Spring Security安全配置类
  * 用于配置系统的安全认证、授权等功能
- * 包括�?
+ * 包括：
  * - 密码加密方式
  * - 安全过滤器链
  * - 请求授权规则
@@ -26,11 +26,11 @@ public class SecurityConfig {
     private UserDetailsService userDetailsService;
 
     /**
-     * 密码编码器配�?
-     * 使用BCrypt加密算法对密码进行加�?
-     * BCrypt是一种安全的密码哈希函数，自动包含随机盐�?
+     * 密码编码器配置
+     * 使用BCrypt加密算法对密码进行加密
+     * BCrypt是一种安全的密码哈希函数，自动包含随机盐值
      *
-     * @return PasswordEncoder BCrypt密码编码器实�?
+     * @return PasswordEncoder BCrypt密码编码器实现
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -39,7 +39,7 @@ public class SecurityConfig {
 
     /**
      * 安全过滤器链配置
-     * 配置系统的安全规则，包括�?
+     * 配置系统的安全规则，包括：
      * 1. 请求授权规则
      *    - /user/login 允许匿名访问
      *    - 其他请求暂时允许所有访问（开发环境配置）

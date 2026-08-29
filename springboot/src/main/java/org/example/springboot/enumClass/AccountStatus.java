@@ -19,6 +19,6 @@ public enum AccountStatus {
                 return status;
             }
         }
-        throw new IllegalArgumentException("未知的账号状�? " + value);
+        throw new IllegalArgumentException("未知的账号状态 " + value);
     }
 }
