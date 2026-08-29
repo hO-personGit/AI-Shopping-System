@@ -21,7 +21,7 @@ public class JacksonConfig {
             // 创建 JavaTimeModule
             JavaTimeModule module = new JavaTimeModule();
             
-            // 配置 LocalDateTime 的序列化器和反序列化�?
+            // 配置 LocalDateTime 的序列化器和反序列化器
             LocalDateTimeSerializer serializer = new LocalDateTimeSerializer(DateTimeFormatter.ofPattern(DATE_TIME_PATTERN));
             LocalDateTimeDeserializer deserializer = new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern(DATE_TIME_PATTERN));
             
