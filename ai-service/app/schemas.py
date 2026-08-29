@@ -1,4 +1,4 @@
-﻿from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -18,6 +18,7 @@ class ProductRecommendation(BaseModel):
 class GuideRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
     user_id: Optional[int] = Field(default=None, alias="userId")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
     top_k: int = Field(default=5, ge=1, le=10, alias="topK")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -27,6 +28,10 @@ class GuideResponse(BaseModel):
     answer: str
     recommendations: List[ProductRecommendation]
     source: str = ""
+    tool_calls: List[str] = Field(default_factory=list, alias="toolCalls")
+    cached: bool = False
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CopywritingRequest(BaseModel):
