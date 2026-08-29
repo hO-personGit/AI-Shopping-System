@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/product_faiss/*
+!data/product_faiss/.gitkeep
+tests/__pycache__/
+.pytest_cache/
