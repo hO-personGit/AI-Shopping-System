@@ -14,6 +14,9 @@ import java.sql.Timestamp;
 public class Order {
     @TableId(type = IdType.AUTO)
     private Long id;
+
+    /** 业务订单号（幂等键，MQ 异步下单使用） */
+    private String orderNo;
     private Long userId;
     private BigDecimal totalPrice;
     private Integer status;

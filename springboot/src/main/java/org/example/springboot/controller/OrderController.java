@@ -35,6 +35,10 @@ public class OrderController {
     public Result<?> deleteOrder(@PathVariable Long id) {
         return orderService.deleteOrder(id);
     }
+    @PutMapping("/{id}/cancel")
+    public Result<?> cancelOrder(@PathVariable Long id) {
+        return orderService.cancelOrder(id);
+    }
     @GetMapping("/{id}")
     public Result<?> getOrderById(@PathVariable Long id) {
         return orderService.getOrderById(id);

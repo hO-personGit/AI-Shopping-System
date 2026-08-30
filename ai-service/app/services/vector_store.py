@@ -19,6 +19,7 @@ from langchain_community.vectorstores import FAISS
 from app.config import settings
 from app.services.db import ProductRepository
 from app.services.embeddings import HashEmbeddings
+from app.services.reranker import reranker
 
 
 class ProductVectorStore:
@@ -155,6 +156,12 @@ class ProductVectorStore:
             merged.append(entry)
 
         merged.sort(key=lambda x: x["score"], reverse=True)
+
+        # 语义精排（Rerank）：在 RRF 融合基础上做二次排序，提升头部推荐精度
+        if reranker.is_enabled():
+            recall = max(top_k * 2, len(merged))
+            merged = reranker.rerank(query, merged, top_n=recall)
+
         # 清理内部字段，返回干净结果
         for entry in merged:
             for f in ("_vector_rank", "_keyword_rank", "_vector_score", "_keyword_score"):
