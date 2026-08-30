@@ -107,12 +107,23 @@ def _write_report(summary: Dict[str, Any], output_dir: str) -> Path:
                      "ndcg@k 归一化折损累计增益 / faithfulnessProxy 忠实度代理 / "
                      "answerRelevancyProxy 相关性代理。")
     lines += ["", "## 分样本", "", "| 问题 | 类别 | recall@k | precision@k | mrr | ndcg@k | 忠实度 | 相关性 |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    top_k = summary["topK"]
+    recall_key = "recall@{0}".format(top_k)
+    precision_key = "precision@{0}".format(top_k)
+    ndcg_key = "ndcg@{0}".format(top_k)
     for c in summary["cases"]:
-        lines.append(
-            f"| {c['query']} | {c.get('category','')} | {c.get(f'recall@{summary[\"topK\"]}','-')} "
-            f"| {c.get(f'precision@{summary[\"topK\"]}','-')} | {c.get('mrr','-')} "
-            f"| {c.get(f'ndcg@{summary[\"topK\"]}','-')} | {c.get('faithfulnessProxy','-')} "
-            f"| {c.get('answerRelevancyProxy','-')} |")
+        q = c["query"]
+        cat = c.get("category", "")
+        row = "| {q} | {cat} | {recall} | {precision} | {mrr} | {ndcg} | {faith} | {rel} |".format(
+            q=q, cat=cat,
+            recall=c.get(recall_key, "-"),
+            precision=c.get(precision_key, "-"),
+            mrr=c.get("mrr", "-"),
+            ndcg=c.get(ndcg_key, "-"),
+            faith=c.get("faithfulnessProxy", "-"),
+            rel=c.get("answerRelevancyProxy", "-"),
+        )
+        lines.append(row)
     if summary["errors"]:
         lines += ["", "## 异常", ""] + [f"- {e}" for e in summary["errors"]]
     report = out / "eval_report.md"
