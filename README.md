@@ -24,8 +24,16 @@
 - 📊 **AI 销售分析**：基于订单、销量、库存数据，输出热销分析、库存预警、补货建议
 - 💬 **多轮对话**：智能导购支持会话上下文，追问更自然
 - ⚡ **SSE 流式输出**：导购回答打字机式逐字返回，体验更流畅
-- 🔍 **混合检索 + 重排**：向量检索 + 关键词多路召回，提升推荐精度
+- 🔍 **混合检索 + 语义精排**：向量检索 + 关键词多路召回 + RRF 融合 + Rerank 精排，提升推荐精度
 - 🛠 **Function Calling Agent**：AI 可调用商品查询、库存查询等工具，能力可扩展
+- 🧪 **RAG 评估闭环**：recall@k / MRR / NDCG@k + 忠实度 / 相关性评估报告（RAGAS 风格）
+
+**高并发与工程化（v3.0）**
+
+- 🚀 **MQ 异步下单链路**：RabbitMQ 削峰解耦，Redis 预扣库存防超卖，延迟队列超时关单 + 定时兜底
+- 🔄 **订单状态机**：0 待支付 → 1 已支付 → 2 已发货 → 3 已完成 / 4 已取消 / 5 退款中 → 6 已退款 / 7 退款失败
+- 🛡 **缓存三防**：布隆过滤器防穿透、互斥锁双检防击穿、TTL 抖动防雪崩（Caffeine + Redis 两级缓存）
+- 📈 **性能压测量化**：JMeter / Python 压测脚本（QPS / P50 / P95 / P99 / 超卖检查）
 
 ## 🏗 系统架构
 
@@ -84,9 +92,9 @@ end
 | 层 | 技术 |
 |---|---|
 | 前端 | Vue 2 · Element UI · Axios · ECharts · Vue Router · Vuex |
-| 后端 | Spring Boot 3.4 · MyBatis-Plus 3.5 · Spring Security · JWT · Redis · Caffeine |
+| 后端 | Spring Boot 3.4 · MyBatis-Plus 3.5 · Spring Security · JWT · Redis · Caffeine · RabbitMQ |
 | AI 服务 | Python · FastAPI · LangChain · FAISS · Pydantic |
-| 数据库 | MySQL 8 · Redis |
+| 数据库 | MySQL 8 · Redis · RabbitMQ |
 | 工程化 | Git/GitHub · GitHub Actions CI · Docker · docker-compose |
 
 ## 📁 目录结构
@@ -113,6 +121,15 @@ AI-Shopping-System/
 ```bash
 docker compose up -d
 ```
+
+> 启用 MQ 异步下单（可选）：
+> ```bash
+> # 1) 执行数据库迁移（新增 order_no 幂等键）
+> mysql -uroot -p db_aps < 数据库/upgrade/v3.0.0_mq_async_order.sql
+> # 2) 开启 MQ 开关后重启后端
+> APP_MQ_ENABLED=true docker compose up -d --build backend
+> # RabbitMQ 管理台 http://localhost:15672 (guest/guest)
+> ```
 
 > 需先准备 `springboot/src/main/resources/application.properties` 与 `ai-service/.env`（见方式二）。
 
@@ -178,5 +195,6 @@ git push origin feature/my-feature   # 发起 PR → develop
 
 ## 📌 版本
 
+- v3.0.0：MQ 异步下单 + 订单状态机 + 缓存三防 + Rerank 精排 + RAG 评估闭环 + 性能压测量化
 - v2.0.0：AI 能力升级（多轮对话、SSE 流式、混合检索、Function Calling、问答缓存）+ 工程化（CI、Docker、Git 协作规范）
 - v1.0.0：AI 基础能力（智能导购、文案生成、销售分析）
