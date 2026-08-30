@@ -8,23 +8,36 @@ import org.example.springboot.common.Result;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.Product;
 import org.example.springboot.entity.Logistics;
+import org.example.springboot.enumClass.OrderStatus;
 import org.example.springboot.mapper.*;
+import org.example.springboot.mq.OrderEventType;
+import org.example.springboot.mq.OrderMessage;
+import org.example.springboot.mq.OrderMessageProducer;
+import org.example.springboot.util.RedisStockDeductionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
 public class OrderService {
     private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
+
+    /** MQ 异步下单开关：true 走「Redis 预扣 + MQ 异步落库 + 延迟关单」，false 走原有同步逻辑 */
+    @Value("${app.mq.enabled:false}")
+    private boolean mqEnabled;
 
     @Autowired
     private OrderMapper orderMapper;
@@ -44,7 +57,13 @@ public class OrderService {
     @Autowired
     private org.example.springboot.util.RedisLockUtil redisLockUtil;
 
+    @Autowired
+    private RedisStockDeductionUtil stockDeductionUtil;
 
+    @Autowired(required = false)
+    private OrderMessageProducer orderMessageProducer;
+
+    // ================= 下单 =================
 
     public Result<?> createOrder(Order order) {
         try {
@@ -60,11 +79,38 @@ public class OrderService {
             // 计算总价
             order.setTotalPrice(order.getPrice().multiply(BigDecimal.valueOf(order.getQuantity())));
 
+            // MQ 异步下单：Redis 预扣库存（防超卖）→ 发消息异步落库 → 延迟关单兜底
+            if (mqEnabled && orderMessageProducer != null) {
+                boolean deducted = stockDeductionUtil.tryDeduct(
+                        order.getProductId(), order.getQuantity(), product.getStock());
+                if (!deducted) {
+                    LOGGER.warn("Redis 预扣库存失败（并发超卖），productId={} quantity={}", order.getProductId(), order.getQuantity());
+                    return Result.error("-1", "库存不足，请稍后重试");
+                }
+                String orderNo = generateOrderNo();
+                OrderMessage message = OrderMessage.builder()
+                        .eventType(OrderEventType.ORDER_CREATE.name())
+                        .orderNo(orderNo)
+                        .userId(order.getUserId())
+                        .productId(order.getProductId())
+                        .quantity(order.getQuantity())
+                        .price(order.getPrice())
+                        .totalPrice(order.getTotalPrice())
+                        .recvName(order.getRecvName())
+                        .recvAddress(order.getRecvAddress())
+                        .recvPhone(order.getRecvPhone())
+                        .remark(order.getRemark())
+                        .build();
+                orderMessageProducer.publish(message, false);
+                LOGGER.info("MQ 异步下单已提交，订单号：{}", orderNo);
+                // 异步模式下订单由消费者落库，此处返回业务订单号标识
+                order.setOrderNo(orderNo);
+                return Result.success(order);
+            }
+
+            // 同步兜底（默认）：直接落库
             int result = orderMapper.insert(order);
-
             if (result > 0) {
-                // 更新商品库存
-
                 LOGGER.info("创建订单成功，订单ID：{}", order.getId());
                 return Result.success(order);
             }
@@ -75,11 +121,77 @@ public class OrderService {
         }
     }
 
+    /**
+     * 取消订单（仅待支付订单可取消）。
+     * <p>MQ 模式下发送取消事件，由消费者回补 Redis 预扣库存并更新状态；
+     * 同步模式直接执行状态机变更 + 回补。
+     */
+    public Result<?> cancelOrder(Long id) {
+        try {
+            Order order = orderMapper.selectById(id);
+            if (order == null) {
+                return Result.error("-1", "未找到订单");
+            }
+            if (order.getStatus() != OrderStatus.PENDING_PAYMENT.getCode()) {
+                return Result.error("-1", "仅待支付订单可取消");
+            }
+            if (mqEnabled && orderMessageProducer != null) {
+                OrderMessage message = OrderMessage.builder()
+                        .eventType(OrderEventType.ORDER_CANCEL.name())
+                        .orderId(id)
+                        .orderNo(order.getOrderNo())
+                        .productId(order.getProductId())
+                        .quantity(order.getQuantity())
+                        .build();
+                orderMessageProducer.publish(message, false);
+                LOGGER.info("取消订单请求已提交，订单ID：{}", id);
+                return Result.success("订单取消请求已提交");
+            }
+            // 同步取消：状态机校验 + 回补预扣库存
+            if (!OrderStatus.canTransition(order.getStatus(), OrderStatus.CANCELLED.getCode())) {
+                return Result.error("-1", "当前订单状态不允许取消");
+            }
+            order.setLastStatus(order.getStatus());
+            order.setStatus(OrderStatus.CANCELLED.getCode());
+            order.setRemark("用户取消订单");
+            orderMapper.updateById(order);
+            stockDeductionUtil.restore(order.getProductId(), order.getQuantity());
+            LOGGER.info("取消订单成功，订单ID：{}", id);
+            return Result.success(order);
+        } catch (Exception e) {
+            LOGGER.error("取消订单失败：{}", e.getMessage());
+            return Result.error("-1", "取消订单失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询超时未支付订单（供定时任务扫描，兜底延迟队列）。
+     */
+    public List<Order> listExpiredPendingOrders(int timeoutMinutes) {
+        Timestamp cutoff = Timestamp.valueOf(LocalDateTime.now().minusMinutes(timeoutMinutes));
+        return orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getStatus, OrderStatus.PENDING_PAYMENT.getCode())
+                .lt(Order::getCreatedAt, cutoff));
+    }
+
+    /** 生成业务订单号：yyyyMMddHHmmss + 6 位随机数 */
+    private String generateOrderNo() {
+        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        int rand = ThreadLocalRandom.current().nextInt(100000, 1000000);
+        return ts + rand;
+    }
+
     public Result<?> updateOrderStatus(Long id, Integer status) {
         try {
             Order order = orderMapper.selectById(id);
             if (order == null) {
                 return Result.error("-1", "未找到订单");
+            }
+
+            // 状态机校验：非法流转直接拒绝
+            if (!OrderStatus.canTransition(order.getStatus(), status)) {
+                LOGGER.warn("非法订单状态流转 orderId={} from={} to={}", id, order.getStatus(), status);
+                return Result.error("-1", "非法的订单状态流转");
             }
 
             order.setLastStatus(order.getStatus());
@@ -219,6 +331,11 @@ public class OrderService {
 
             // 检查订单状态是否允许退款
             if (order.getStatus() != 1 && order.getStatus() != 2) {
+                return Result.error("-1", "当前订单状态不允许退款");
+            }
+
+            // 状态机校验：已支付/已发货 → 退款中
+            if (!OrderStatus.canTransition(order.getStatus(), OrderStatus.REFUNDING.getCode())) {
                 return Result.error("-1", "当前订单状态不允许退款");
             }
 
@@ -412,6 +529,11 @@ public class OrderService {
                 return Result.error("-1", "订单当前状态不是退款中");
             }
 
+            // 状态机校验：退款中 → 已退款/退款失败
+            if (!OrderStatus.canTransition(order.getStatus(), status)) {
+                return Result.error("-1", "非法的退款处理状态");
+            }
+
             // 保存原始状态
             order.setLastStatus(order.getStatus());
             // 更新状态
@@ -456,4 +578,4 @@ public class OrderService {
             return Result.error("-1", "处理退款失败：" + e.getMessage());
         }
     }
-} 
+}
