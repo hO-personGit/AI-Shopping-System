@@ -55,6 +55,9 @@ public class ProductService {
     private StockInMapper stockInMapper;
     @Resource
     private StockOutMapper stockOutMapper;
+
+    @Autowired
+    private ProductCacheService productCacheService;
     @Caching(evict = {
             @CacheEvict(value = "productPages",allEntries = true),
             @CacheEvict(value="products",allEntries = true)
@@ -64,6 +67,7 @@ public class ProductService {
             int result = productMapper.insert(product);
             if (result > 0) {
                 LOGGER.info("创建商品成功，商品ID：{}", product.getId());
+                productCacheService.evict(product.getId());
                 return Result.success(product);
             }
             return Result.error("-1", "创建商品失败");
@@ -95,6 +99,7 @@ public class ProductService {
             int result = productMapper.updateById(product);
             if (result > 0) {
                 LOGGER.info("更新商品成功，商品ID：{}", id);
+                productCacheService.evict(id);
                 return Result.success(product);
             }
             return Result.error("-1", "更新商品失败");
@@ -159,6 +164,7 @@ public class ProductService {
             int result = productMapper.deleteById(id);
             if (result > 0) {
                 LOGGER.info("删除商品成功，商品ID：{}", id);
+                productCacheService.evict(id);
                 return Result.success();
             }
             return Result.error("-1", "删除商品失败");
@@ -168,16 +174,10 @@ public class ProductService {
         }
     }
 
-    @Cacheable(value = "products", key = "#productId")
     public Result<?> getProductById(Long productId) {
-        Product product = productMapper.selectById(productId);
-        if (product != null) {
-            // 填充关联信息
-            product.setMerchant(userMapper.selectById(product.getMerchantId()));
-            product.setCategory(categoryMapper.selectById(product.getCategoryId()));
-            return Result.success(product);
-        }
-        return Result.error("-1", "未找到商品");
+        // 带「缓存穿透/击穿/雪崩」三防的商品详情读取：
+        // 布隆过滤器拦截穿透 + 互斥锁重建防击穿 + TTL 抖动防雪崩 + Caffeine/Redis 两级缓存
+        return productCacheService.getProductDetail(productId);
     }
     @Cacheable(value = "productPages",
             key = "{#currentPage, #size, #sortField, #sortOrder, T(org.example.springboot.util.CacheUtil).generateIdFingerprint(#result)}",
@@ -259,6 +259,7 @@ public class ProductService {
         int result = productMapper.updateById(product);
         if (result > 0) {
             LOGGER.info("更新商品状态成功，商品ID：{}，新状态：{}", id, status);
+            productCacheService.evict(id);
             return Result.success();
         }
         return Result.error("-1", "更新商品状态失败");
