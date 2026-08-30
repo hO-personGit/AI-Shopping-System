@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     hybrid_vector_weight: float = 0.6
     hybrid_keyword_weight: float = 0.4
 
+    # 精排（Rerank）：none / lexical（默认，无依赖） / api（接 Rerank 服务）
+    rerank_mode: str = "lexical"
+    rerank_model: str = "bge-reranker-v2-m3"
+    rerank_api_key: str = ""
+    rerank_base_url: str = ""
+    rerank_top_n: int = 5
+
     # 缓存：问答结果 TTL（秒）
     cache_ttl_seconds: int = 600
     cache_max_size: int = 256
