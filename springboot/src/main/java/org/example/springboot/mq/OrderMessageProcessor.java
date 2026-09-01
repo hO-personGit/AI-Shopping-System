@@ -50,6 +50,10 @@ public class OrderMessageProcessor implements OrderMessageHandler {
         if (message == null || message.getEventType() == null) {
             return false;
         }
+        // 消费端透传 TraceId，保证 MQ 链路日志可串联
+        if (message.getTraceId() != null && !message.getTraceId().isBlank()) {
+            org.slf4j.MDC.put(org.example.springboot.filter.TraceIdFilter.TRACE_ID_MDC_KEY, message.getTraceId());
+        }
         OrderEventType type = OrderEventType.fromName(message.getEventType());
         if (type == null) {
             LOGGER.warn("未知订单事件类型: {}", message.getEventType());

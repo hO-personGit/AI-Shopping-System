@@ -1,0 +1,12 @@
+# Grafana 看板自动加载
+apiVersion: 1
+
+providers:
+  - name: 'ai-shopping-system'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

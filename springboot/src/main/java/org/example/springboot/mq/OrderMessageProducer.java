@@ -46,6 +46,10 @@ public class OrderMessageProducer {
         if (message.getRetryCount() == null) {
             message.setRetryCount(0);
         }
+        // 透传 TraceId：请求线程的 traceId 随消息进入 MQ 消费链路
+        if (message.getTraceId() == null || message.getTraceId().isBlank()) {
+            message.setTraceId(org.slf4j.MDC.get(org.example.springboot.filter.TraceIdFilter.TRACE_ID_MDC_KEY));
+        }
         OrderEventType type = OrderEventType.fromName(message.getEventType());
         if (type == null) {
             LOGGER.warn("非法事件类型，丢弃消息: {}", message.getEventType());

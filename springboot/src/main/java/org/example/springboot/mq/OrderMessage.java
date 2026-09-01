@@ -55,4 +55,7 @@ public class OrderMessage implements Serializable {
 
     /** 消息创建时间戳 */
     private Long timestamp;
+
+    /** 全链路 TraceId（日志串联：下单请求 → MQ → 消费者） */
+    private String traceId;
 }
