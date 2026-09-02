@@ -5,8 +5,9 @@
     1) 启动后端（端口 1234）、AI 服务（端口 8001）、MySQL、Redis
     2) python ai_load_test.py --base http://localhost:1234 --product 1 --threads 50 --loops 20
        python ai_load_test.py --target ai --base http://localhost:8001 --threads 10 --loops 5
+       python ai_load_test.py --target order --base http://localhost:1234 --threads 30 --loops 20
 
-输出：QPS / 平均耗时 / P50 / P95 / P99 / 成功率 / 超卖检查
+输出：QPS / 平均耗时 / P50 / P95 / P99 / 成功率（下单场景额外输出成功/库存拒绝数）
 """
 from __future__ import annotations
 
@@ -28,58 +29,10 @@ def _timing(stats: List[float], p: float) -> float:
     return round(stats_sorted[idx] * 1000, 1)
 
 
-def load_backend(base: str, product_id: int, threads: int, loops: int) -> Dict[str, object]:
-    """压测商品详情读取（缓存命中）与下单支付（防超卖）。"""
-    latencies: List[float] = []
-    errors = 0
-    oversell = 0
-    order_success = 0
-
-    def detail_task(_):
-        nonlocal errors
-        start = time.perf_counter()
-        try:
-            r = requests.get(f"{base}/product/{product_id}", timeout=10)
-            latencies.append(time.perf_counter() - start)
-            if r.status_code != 200:
-                errors += 1
-        except Exception:
-            errors += 1
-            latencies.append(time.perf_counter() - start)
-
-    def order_task(_):
-        nonlocal errors, oversell, order_success
-        start = time.perf_counter()
-        try:
-            payload = {
-                "userId": 1, "productId": product_id, "quantity": 1, "price": 199.0,
-                "recvName": "压测用户", "recvAddress": "郑州", "recvPhone": "13000000000",
-            }
-            r = requests.post(f"{base}/order", json=payload, timeout=10)
-            latencies.append(time.perf_counter() - start)
-            if r.status_code != 200:
-                errors += 1
-                return
-            data = r.json()
-            if data.get("code") == "0":
-                order_success += 1
-            elif "库存" in str(data.get("msg", "")):
-                oversell += 1  # 正常并发下库存不足拒绝，不算超卖
-            else:
-                errors += 1
-        except Exception:
-            errors += 1
-            latencies.append(time.perf_counter() - start)
-
-    total = threads * loops
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
-        start_all = time.perf_counter()
-        for _ in range(loops):
-            list(pool.map(detail_task, range(threads)))
-        elapsed = time.perf_counter() - start_all
-
-    return {
-        "type": "product-detail(cached)",
+def _summary(name: str, latencies: List[float], total: int, elapsed: float,
+             errors: int = 0, extra: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+    result: Dict[str, object] = {
+        "type": name,
         "requests": total,
         "elapsed_s": round(elapsed, 2),
         "qps": round(total / elapsed, 1) if elapsed else 0,
@@ -90,6 +43,76 @@ def load_backend(base: str, product_id: int, threads: int, loops: int) -> Dict[s
         "errors": errors,
         "success_rate": round((1 - errors / total) * 100, 2) if total else 0,
     }
+    if extra:
+        result.update(extra)
+    return result
+
+
+def load_product_detail(base: str, product_id: int, threads: int, loops: int) -> Dict[str, object]:
+    """压测商品详情读取（缓存命中）。"""
+    latencies: List[float] = []
+    errors = 0
+
+    def task(_):
+        nonlocal errors
+        start = time.perf_counter()
+        try:
+            r = requests.get(f"{base}/api/product/{product_id}", timeout=10)
+            latencies.append(time.perf_counter() - start)
+            if r.status_code != 200:
+                errors += 1
+        except Exception:
+            errors += 1
+            latencies.append(time.perf_counter() - start)
+
+    total = threads * loops
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
+        start_all = time.perf_counter()
+        for _ in range(loops):
+            list(pool.map(task, range(threads)))
+        elapsed = time.perf_counter() - start_all
+    return _summary("product-detail(cached)", latencies, total, elapsed, errors)
+
+
+def load_order(base: str, product_id: int, threads: int, loops: int) -> Dict[str, object]:
+    """压测下单接口（同步模式落库，观察成功率与吞吐）。"""
+    latencies: List[float] = []
+    errors = 0
+    success = 0
+    rejected = 0
+
+    def task(_):
+        nonlocal errors, success, rejected
+        start = time.perf_counter()
+        try:
+            payload = {
+                "userId": 1, "productId": product_id, "quantity": 1, "price": 199.0,
+                "recvName": "压测用户", "recvAddress": "郑州", "recvPhone": "13000000000",
+            }
+            r = requests.post(f"{base}/api/order", json=payload, timeout=10)
+            latencies.append(time.perf_counter() - start)
+            if r.status_code != 200:
+                errors += 1
+                return
+            data = r.json()
+            if data.get("code") == "0":
+                success += 1
+            elif "库存" in str(data.get("msg", "")):
+                rejected += 1
+            else:
+                errors += 1
+        except Exception:
+            errors += 1
+            latencies.append(time.perf_counter() - start)
+
+    total = threads * loops
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
+        start_all = time.perf_counter()
+        for _ in range(loops):
+            list(pool.map(task, range(threads)))
+        elapsed = time.perf_counter() - start_all
+    return _summary("order-create", latencies, total, elapsed, errors,
+                    extra={"order_success": success, "stock_rejected": rejected})
 
 
 def load_ai(base: str, threads: int, loops: int) -> Dict[str, object]:
@@ -97,7 +120,7 @@ def load_ai(base: str, threads: int, loops: int) -> Dict[str, object]:
     latencies: List[float] = []
     errors = 0
 
-    def guide_task(_):
+    def task(_):
         nonlocal errors
         start = time.perf_counter()
         try:
@@ -114,26 +137,14 @@ def load_ai(base: str, threads: int, loops: int) -> Dict[str, object]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
         start_all = time.perf_counter()
         for _ in range(loops):
-            list(pool.map(guide_task, range(threads)))
+            list(pool.map(task, range(threads)))
         elapsed = time.perf_counter() - start_all
-
-    return {
-        "type": "ai-guide",
-        "requests": total,
-        "elapsed_s": round(elapsed, 2),
-        "qps": round(total / elapsed, 1) if elapsed else 0,
-        "avg_ms": round(statistics.mean(latencies) * 1000, 1) if latencies else 0,
-        "p50_ms": _timing(latencies, 0.50),
-        "p95_ms": _timing(latencies, 0.95),
-        "p99_ms": _timing(latencies, 0.99),
-        "errors": errors,
-        "success_rate": round((1 - errors / total) * 100, 2) if total else 0,
-    }
+    return _summary("ai-guide", latencies, total, elapsed, errors)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--target", choices=["backend", "ai"], default="backend")
+    parser.add_argument("--target", choices=["detail", "order", "ai"], default="detail")
     parser.add_argument("--base", default="http://localhost:1234")
     parser.add_argument("--product", type=int, default=1)
     parser.add_argument("--threads", type=int, default=50)
@@ -142,8 +153,10 @@ def main() -> None:
 
     if args.target == "ai":
         result = load_ai(args.base, args.threads, args.loops)
+    elif args.target == "order":
+        result = load_order(args.base, args.product, args.threads, args.loops)
     else:
-        result = load_backend(args.base, args.product, args.threads, args.loops)
+        result = load_product_detail(args.base, args.product, args.threads, args.loops)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
