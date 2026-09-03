@@ -51,6 +51,18 @@ public class GlobalExceptionHandler {
         return Result.error("404", "接口不存在：" + ex.getRequestURL());
     }
 
+    /** 限流触发：返回 429（Too Many Requests）。 */
+    @ExceptionHandler(org.example.springboot.ratelimit.RateLimitExceededException.class)
+    public Result<?> handleRateLimit(org.example.springboot.ratelimit.RateLimitExceededException ex) {
+        return Result.error("429", ex.getMessage());
+    }
+
+    /** 熔断打开：返回 503（Service Unavailable），提示服务降级。 */
+    @ExceptionHandler(org.example.springboot.ratelimit.CircuitBreakerOpenException.class)
+    public Result<?> handleCircuitBreaker(org.example.springboot.ratelimit.CircuitBreakerOpenException ex) {
+        return Result.error("503", ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Result<?> handleException(Exception ex) {
         LOGGER.error("系统异常", ex);
