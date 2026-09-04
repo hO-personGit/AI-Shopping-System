@@ -21,6 +21,7 @@ public class OrderController {
     private OrderMapper orderMapper;
     @PostMapping
     @org.example.springboot.ratelimit.RateLimit(key = "order-create", permitsPerSecond = 100, capacity = 200)
+    @org.example.springboot.idempotent.Idempotent
     public Result<?> createOrder(@RequestBody Order order) {
         return orderService.createOrder(order);
     }

@@ -17,6 +17,10 @@ public class Order {
 
     /** 业务订单号（幂等键，MQ 异步下单使用） */
     private String orderNo;
+
+    /** 客户端幂等键（接口幂等，不落库） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String requestId;
     private Long userId;
     private BigDecimal totalPrice;
     private Integer status;
