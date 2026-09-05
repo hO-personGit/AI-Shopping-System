@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import threading
@@ -19,6 +20,7 @@ from langchain_community.vectorstores import FAISS
 from app.config import settings
 from app.services.db import ProductRepository
 from app.services.embeddings import HashEmbeddings
+from app.services.milvus_store import MilvusStore, MilvusUnavailableError
 from app.services.reranker import reranker
 
 
@@ -28,6 +30,19 @@ class ProductVectorStore:
         self.repository = ProductRepository()
         self.vector_store = None
         self._lock = threading.Lock()
+        # 向量库后端：faiss（默认）/ milvus（连接失败自动降级 faiss）
+        self.backend = (settings.vector_db or "faiss").lower().strip()
+        self.milvus = None
+        if self.backend == "milvus":
+            try:
+                self.milvus = MilvusStore(settings.embedding_dim)
+                logger = logging.getLogger("ai-service")
+                logger.info("向量库后端：Milvus（%s）", self.milvus.collection)
+            except MilvusUnavailableError as exc:
+                self.backend = "faiss"
+                self.milvus = None
+                logging.getLogger("ai-service").warning(
+                    "Milvus 不可用，自动降级 FAISS：%s", exc)
 
     # ---------- 索引构建 / 加载 ----------
 
@@ -47,6 +62,21 @@ class ProductVectorStore:
         index_path.parent.mkdir(parents=True, exist_ok=True)
         self.vector_store = FAISS.from_texts(texts=texts, embedding=self.embedding, metadatas=metadatas)
         self.vector_store.save_local(str(index_path))
+        # Milvus 后端：同步写入向量数据（失败降级 FAISS，不影响主链路）
+        if self.backend == "milvus" and self.milvus is not None:
+            try:
+                items = []
+                for product, text in zip(products, texts):
+                    item = self._product_to_metadata(product)
+                    item["vector"] = self.embedding.embed_query(text)
+                    items.append(item)
+                self.milvus.upsert(items)
+                logging.getLogger("ai-service").info(
+                    "向量已写入 Milvus collection=%s count=%d", self.milvus.collection, len(items))
+            except Exception as exc:
+                self.backend = "faiss"
+                self.milvus = None
+                logging.getLogger("ai-service").warning("Milvus 写入失败，降级 FAISS：%s", exc)
         return len(texts)
 
     def load(self):
@@ -64,7 +94,15 @@ class ProductVectorStore:
     # ---------- 单路召回 ----------
 
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """FAISS 语义向量检索。"""
+        """语义向量检索（Milvus 优先，失败降级 FAISS，再降级关键词）。"""
+        if self.backend == "milvus" and self.milvus is not None:
+            try:
+                vector = self.embedding.embed_query(query)
+                return self.milvus.search(vector, top_k)
+            except Exception as exc:
+                self.backend = "faiss"
+                self.milvus = None
+                logging.getLogger("ai-service").warning("Milvus 检索失败，降级 FAISS：%s", exc)
         with self._lock:
             if self.vector_store is None:
                 self.load()
