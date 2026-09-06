@@ -120,11 +120,41 @@ services:
       - backend
     networks: [aps-net]
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: aps-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    networks: [aps-net]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: aps-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks: [aps-net]
+
 volumes:
   mysql-data:
   redis-data:
   faiss-data:
   rabbitmq-data:
+  prom-data:
+  grafana-data:
 
 networks:
   aps-net:

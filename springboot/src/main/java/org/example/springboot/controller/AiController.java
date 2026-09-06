@@ -50,6 +50,8 @@ public class AiController {
                 return Result.error("400", "Please input shopping requirement");
             }
             return Result.success(aiService.smartGuide(request));
+        } catch (org.example.springboot.ratelimit.CircuitBreakerOpenException ex) {
+            return Result.success(aiService.fallbackGuide(request));
         } catch (Exception ex) {
             return Result.error("500", ex.getMessage());
         }
@@ -109,6 +111,8 @@ public class AiController {
     public Result<?> generateCopywriting(@RequestBody AiCopywritingRequest request) {
         try {
             return Result.success(aiService.generateCopywriting(request));
+        } catch (org.example.springboot.ratelimit.CircuitBreakerOpenException ex) {
+            return Result.success(aiService.fallbackCopywriting(request));
         } catch (Exception ex) {
             return Result.error("500", ex.getMessage());
         }
@@ -118,6 +122,8 @@ public class AiController {
     public Result<?> analyzeSales(@RequestBody(required = false) AiSalesAnalysisRequest request) {
         try {
             return Result.success(aiService.analyzeSales(request));
+        } catch (org.example.springboot.ratelimit.CircuitBreakerOpenException ex) {
+            return Result.success(aiService.fallbackSalesAnalysis());
         } catch (Exception ex) {
             return Result.error("500", ex.getMessage());
         }

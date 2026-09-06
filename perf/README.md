@@ -33,11 +33,14 @@ jmeter -n -t perf/jmeter/backend-api.jmx -l result.jtl -e -o report/
 
 ## 三、Python 轻量压测
 
-不依赖 JMeter，适合快速冒烟：
+不依赖 JMeter，适合快速冒烟（接口路径已含 `/api` 前缀）：
 
 ```bash
 # 后端：商品详情缓存命中压测
-python perf/ai/ai_load_test.py --target backend --base http://localhost:1234 --product 1 --threads 50 --loops 20
+python perf/ai/ai_load_test.py --target detail --base http://localhost:1234 --product 1 --threads 50 --loops 20
+
+# 后端：下单接口压测（观察成功率/库存拒绝）
+python perf/ai/ai_load_test.py --target order --base http://localhost:1234 --product 1 --threads 30 --loops 20
 
 # AI 智能导购接口压测
 python perf/ai/ai_load_test.py --target ai --base http://localhost:8001 --threads 10 --loops 5
@@ -60,7 +63,19 @@ python perf/ai/ai_load_test.py --target ai --base http://localhost:8001 --thread
 }
 ```
 
-## 四、结果记录模板（填入简历/报告）
+## 四、结果记录（v4.0.0 实测，2026-09-06）
+
+> 环境：Win 单机，MySQL 9.5 本机，后端 1234，AI mock 8001；商品详情/下单为 Caffeine 缓存+同步落库基线，Redis/MQ 未部署（异步链路为 v3 设计，需 RabbitMQ 环境复测）。
+
+| 场景 | 方案 | 请求数 | QPS | P50(ms) | P95(ms) | P99(ms) | 成功率 | 超卖 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 商品详情读取 | Caffeine 一级缓存 | 1000 | 1279.8 | 26.6 | 33.9 | 35.7 | 100% | - |
+| 下单（同步落库） | 同步兜底 | 600 | 1050.9 | 22.6 | 28.7 | 30.9 | 100% | 0 |
+| AI 智能导购 | mock + FAISS | 50 | 109.9 | 17.3 | 369.3 | 369.7 | 100% | - |
+
+> 说明：AI 导购 P95/P99 偏高来自并发下首次索引加载；真实 LLM 链路需接入模型后复测。
+
+## 五、结果记录模板（填入简历/报告）
 
 | 场景 | 方案 | QPS | P99(ms) | 成功率 | 超卖 |
 | --- | --- | --- | --- | --- | --- |

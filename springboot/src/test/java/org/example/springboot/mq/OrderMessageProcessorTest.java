@@ -60,13 +60,32 @@ class OrderMessageProcessorTest {
             o.setId(100L);
             return 1;
         });
+        // RabbitMQ 模式：落库成功后投递延迟关单消息
+        org.springframework.test.util.ReflectionTestUtils.setField(processor, "rabbitEnabled", true);
 
         boolean ok = processor.handle(msg);
 
         assertTrue(ok);
         verify(orderMapper, times(1)).insert(any(Order.class));
-        // 落库成功后应投递延迟关单消息
         verify(producer, times(1)).publish(any(OrderMessage.class), eq(true));
+    }
+
+    @Test
+    void handleCreate_shouldSkipTimeoutMessageInLocalMessageTableMode() {
+        OrderMessage msg = buildCreateMessage();
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(100L);
+            return 1;
+        });
+        // 本地消息表模式（默认 rabbitEnabled=false）：不发送 RabbitMQ 延迟消息，由超时扫描兜底
+
+        boolean ok = processor.handle(msg);
+
+        assertTrue(ok);
+        verify(orderMapper, times(1)).insert(any(Order.class));
+        verify(producer, never()).publish(any(OrderMessage.class), anyBoolean());
     }
 
     @Test

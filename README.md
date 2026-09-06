@@ -195,6 +195,7 @@ git push origin feature/my-feature   # 发起 PR → develop
 
 ## 📌 版本
 
+- v4.0.0：可观测性三件套（TraceId + Micrometer + Prometheus/Grafana）+ 真实压测数据 + 限流熔断降级 + 分布式ID/幂等/本地消息表 + 检索升级（Milvus 可插拔 + 精排对比评估）
 - v3.0.0：MQ 异步下单 + 订单状态机 + 缓存三防 + Rerank 精排 + RAG 评估闭环 + 性能压测量化
 - v2.0.0：AI 能力升级（多轮对话、SSE 流式、混合检索、Function Calling、问答缓存）+ 工程化（CI、Docker、Git 协作规范）
 - v1.0.0：AI 基础能力（智能导购、文案生成、销售分析）

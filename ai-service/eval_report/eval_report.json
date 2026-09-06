@@ -1,0 +1,239 @@
+{
+  "generatedAt": "2026-09-06T14:48:23",
+  "topK": 5,
+  "mode": "retrieval-only",
+  "rerankMode": "lexical",
+  "totalCases": 10,
+  "evaluatedCases": 10,
+  "errors": [],
+  "aggregate": {
+    "recall@5": 0.72,
+    "precision@5": 0.38,
+    "hitRate@5": 0.9,
+    "mrr": 0.9,
+    "ndcg@5": 0.7533,
+    "contextPrecision": 0.38
+  },
+  "cases": [
+    {
+      "query": "想买点新鲜苹果，有没有推荐",
+      "category": "导购",
+      "recall@5": 0.5,
+      "precision@5": 0.2,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 0.6131,
+      "contextPrecision": 0.2,
+      "retrievedIds": [
+        "1",
+        "6",
+        "8",
+        "24",
+        "18"
+      ]
+    },
+    {
+      "query": "有机蔬菜有哪些可以买",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 1.0,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.0,
+      "contextPrecision": 1.0,
+      "retrievedIds": [
+        "5",
+        "23",
+        "22",
+        "24",
+        "2"
+      ]
+    },
+    {
+      "query": "主食类的大米和小麦粉推荐",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 0.4,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.0,
+      "contextPrecision": 0.4,
+      "retrievedIds": [
+        "16",
+        "3",
+        "17",
+        "6",
+        "9"
+      ]
+    },
+    {
+      "query": "云南产地的食材有什么",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 0.6,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 0.9675,
+      "contextPrecision": 0.6,
+      "retrievedIds": [
+        "20",
+        "4",
+        "6",
+        "12",
+        "23"
+      ]
+    },
+    {
+      "query": "芒果和猕猴桃这类水果",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 0.4,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.0,
+      "contextPrecision": 0.4,
+      "retrievedIds": [
+        "6",
+        "7",
+        "1",
+        "8",
+        "9"
+      ]
+    },
+    {
+      "query": "花椒调味料哪个产地好",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 0.4,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.0,
+      "contextPrecision": 0.4,
+      "retrievedIds": [
+        "20",
+        "11",
+        "6",
+        "9",
+        "4"
+      ]
+    },
+    {
+      "query": "养生类的红枣和茶叶",
+      "category": "导购",
+      "recall@5": 0.5,
+      "precision@5": 0.2,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 0.6131,
+      "contextPrecision": 0.2,
+      "retrievedIds": [
+        "18",
+        "15",
+        "1",
+        "5",
+        "22"
+      ]
+    },
+    {
+      "query": "销量最高的热销商品是哪些",
+      "category": "销售分析",
+      "recall@5": 0.2,
+      "precision@5": 0.2,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 0.3392,
+      "contextPrecision": 0.2,
+      "retrievedIds": [
+        "24",
+        "22",
+        "23",
+        "5",
+        "6"
+      ]
+    },
+    {
+      "query": "库存少需要补货的商品",
+      "category": "库存",
+      "recall@5": 0.0,
+      "precision@5": 0.0,
+      "hitRate@5": 0.0,
+      "mrr": 0.0,
+      "ndcg@5": 0.0,
+      "contextPrecision": 0.0,
+      "retrievedIds": [
+        "24",
+        "22",
+        "23",
+        "5",
+        "6"
+      ]
+    },
+    {
+      "query": "东北产的大米和小米",
+      "category": "导购",
+      "recall@5": 1.0,
+      "precision@5": 0.4,
+      "hitRate@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.0,
+      "contextPrecision": 0.4,
+      "retrievedIds": [
+        "3",
+        "17",
+        "9",
+        "10",
+        "6"
+      ]
+    }
+  ],
+  "compare": {
+    "baseline": {
+      "recall@5": 0.6867,
+      "precision@5": 0.36,
+      "hitRate@5": 0.9,
+      "mrr": 0.8,
+      "ndcg@5": 0.687,
+      "contextPrecision": 0.36
+    },
+    "reranked": {
+      "recall@5": 0.72,
+      "precision@5": 0.38,
+      "hitRate@5": 0.9,
+      "mrr": 0.9,
+      "ndcg@5": 0.7533,
+      "contextPrecision": 0.38
+    },
+    "rows": [
+      {
+        "metric": "recall@5",
+        "baseline(none)": 0.6867,
+        "rerank(lexical)": 0.72,
+        "delta%": 4.85
+      },
+      {
+        "metric": "precision@5",
+        "baseline(none)": 0.36,
+        "rerank(lexical)": 0.38,
+        "delta%": 5.56
+      },
+      {
+        "metric": "hitRate@5",
+        "baseline(none)": 0.9,
+        "rerank(lexical)": 0.9,
+        "delta%": 0.0
+      },
+      {
+        "metric": "mrr",
+        "baseline(none)": 0.8,
+        "rerank(lexical)": 0.9,
+        "delta%": 12.5
+      },
+      {
+        "metric": "ndcg@5",
+        "baseline(none)": 0.687,
+        "rerank(lexical)": 0.7533,
+        "delta%": 9.65
+      }
+    ]
+  }
+}

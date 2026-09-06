@@ -1,5 +1,50 @@
 # 更新日志
 
+## [4.0.0] - 2026-09-06
+
+### 可观测性三件套（springboot + deploy）
+- **TraceId 全链路透传**：`TraceIdFilter` 生成 16 位十六进制 TraceId（透传 `X-Trace-Id` 请求/响应头），
+  MDC 贯穿 Web → MQ 消息（OrderMessage 携带 traceId）→ AI 微服务（contextvar + 日志 Filter），
+  logback 输出 `[%X{traceId}]`，单请求全链路日志可串联。
+- **Micrometer 指标**：`ApiMetrics` 输出 http_requests_total / http_request_duration（含 P50/P95/P99）/
+  状态码 / 路径四类指标 + `MetricsConfig` 暴露 Caffeine 缓存命中率 Gauge。
+- **Prometheus + Grafana**：`deploy/monitoring` 提供 prometheus.yml、Grafana 数据源与看板
+  （QPS / P95 / P99 / 缓存命中率 / JVM 堆 / 状态码 6 面板），docker-compose 一键拉起 9090/3000。
+
+### 真实压测量化（perf）
+- 压测脚本拆分为 detail / order / ai 三目标，修正 `/api` 全局前缀路径。
+- v4.0.0 实测（Win 单机 + MySQL 9.5）：商品详情（Caffeine 缓存）QPS 1279.8 / P99 35.7ms / 1000 请求 0 错误；
+  下单（同步落库）QPS 1050.9 / 600 单全成功 / 0 超卖；AI 导购（mock）QPS 109.9 / P50 17.3ms。
+- RAG 评估数据集重构为真实商品库（10 条），新增 hitRate@k，指标全面提升：recall@5 0.72 / mrr 0.9 / ndcg@5 0.7533。
+
+### 限流熔断降级（springboot）
+- **令牌桶限流** `TokenBucketRateLimiter` + `@RateLimit` 注解切面：容量突发 + 匀速补充 + 空闲回收，
+  商品详情 200r/s / 下单 100r/s / AI 接口 20~50r/s，超限返回 429（实测 400 并发突发 31 个 429）。
+- **滑动窗口熔断** `CircuitBreakerState` + `@CircuitBreaker` 注解：失败次数/失败率双阈值，
+  闭/开/半开三态状态机，熔断期返回 503。
+- **AI 降级兜底**：AI 服务不可用时导购降级销量热榜、文案降级模板、销售分析降级本地统计
+  （source=fallback），实测 AI 停机第 2 次起自动降级、服务恢复后半开探测自动关闭。
+
+### 分布式ID + 幂等 + 本地消息表（springboot）
+- **雪花 ID** `SnowflakeIdGenerator`：41 位时间戳 + 5 位数据中心 + 5 位机器 + 12 位序列，
+  时钟回拨检测，订单号全局唯一（实测 18 位纯数字，万级无重复）。
+- **接口幂等** `@Idempotent` + Caffeine 幂等结果缓存：requestId 幂等键，重复下单直接返回首次结果
+  （实测相同 requestId 两次请求返回同一订单）。
+- **本地消息表**：`message_record` 表 + `MessageReliabilityService`，订单落库与 PENDING 消息同事务，
+  定时任务扫描投递 → 处理器幂等消费 → SENT，失败指数退避重试（5 次上限标记 FAILED），
+  RabbitMQ 不可用时仍保证可靠最终一致性（实测 PENDING → SENT 12s 内完成）。
+
+### 检索升级（ai-service）
+- **向量库可插拔**：新增 `MilvusStore` 适配层（pymilvus 条件导入），`VECTOR_DB=milvus` 时启用，
+  连接/写入/检索失败自动降级 FAISS，检索链路不中断。
+- **Rerank 精排增强**：lexical 精排增加名称命中 ×2 + 名称全匹配 ×3 加权。
+- **评估闭环升级**：`run_eval --compare` 输出精排增益对比；实测精排相对无精排基线
+  recall +4.85% / precision +5.56% / mrr +12.5% / ndcg@5 +9.65%。
+
+### 测试
+- 后端新增限流 4 / 熔断 4 / 雪花 4 / 幂等 2 用例，共 40 tests passed；
+  AI 服务新增 Milvus 降级 4 用例，共 51 tests passed。
+
 ## [3.0.0] - 2026-08-30
 
 ### MQ 异步下单链路 + 订单状态机（springboot）

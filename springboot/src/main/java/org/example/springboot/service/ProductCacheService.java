@@ -251,6 +251,13 @@ public class ProductCacheService {
         }
     }
 
+    /** 一级缓存统计（供可观测指标使用，需 recordStats() 开启） */
+    public com.github.benmanes.caffeine.cache.stats.CacheStats getCacheStats() {
+        return l1Cache == null
+                ? com.github.benmanes.caffeine.cache.stats.CacheStats.empty()
+                : l1Cache.stats();
+    }
+
     /** 失效缓存（商品变更时调用） */
     public void evict(Long productId) {
         String key = L2_KEY_PREFIX + productId;
