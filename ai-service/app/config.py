@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     faiss_index_path: str = "data/product_faiss"
     embedding_dim: int = 384
 
+    # 向量库：faiss（默认，本地文件）/ milvus（分布式，连接失败自动降级 faiss）
+    vector_db: str = "faiss"
+    milvus_uri: str = ""
+    milvus_host: str = "localhost"
+    milvus_port: int = 19530
+    milvus_collection: str = "product_vectors"
+    milvus_timeout: int = 10
+
     llm_provider: str = "mock"
     llm_api_key: str = ""
     llm_base_url: str = ""

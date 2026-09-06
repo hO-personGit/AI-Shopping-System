@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -15,10 +16,16 @@ from app.schemas import (CopywritingRequest, CopywritingResponse, GuideRequest,
                          SalesAnalysisResponse)
 from app.services.ai_service import product_ai_service
 from app.services.vector_store import product_vector_store
+from app.tracing import (TRACE_ID_HEADER, TraceIdFilter, install_log_filter,
+                         set_trace_id)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(trace_id)s] %(name)s %(message)s",
+)
+install_log_filter()
 
-app = FastAPI(title=settings.app_name, version="2.0.0", description="AI 智能商品销售系统 AI 微服务")
+app = FastAPI(title=settings.app_name, version="4.0.0", description="AI 智能商品销售系统 AI 微服务")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,9 +36,19 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def trace_id_middleware(request: Request, call_next):
+    """全链路 TraceId：透传上游 X-Trace-Id，无则生成，日志与响应均带 traceId。"""
+    trace_id = request.headers.get(TRACE_ID_HEADER) or uuid.uuid4().hex[:16]
+    set_trace_id(trace_id)
+    response = await call_next(request)
+    response.headers[TRACE_ID_HEADER] = trace_id
+    return response
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name, "provider": settings.llm_provider, "version": "2.0.0"}
+    return {"status": "ok", "service": settings.app_name, "provider": settings.llm_provider, "version": "4.0.0"}
 
 
 @app.post("/ai/rebuild-products-index")

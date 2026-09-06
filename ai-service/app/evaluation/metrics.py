@@ -58,11 +58,19 @@ def ndcg_at_k(expected: List[str], retrieved: List[str], k: int = 5) -> float:
     return round(dcg / idcg, 4)
 
 
+def hit_rate_at_k(expected: List[str], retrieved: List[str], k: Optional[int] = None) -> float:
+    """命中率@k：是否至少召回 1 个相关商品（0/1）。"""
+    if k is not None:
+        retrieved = retrieved[:k]
+    return 1.0 if set(expected) & set(retrieved) else 0.0
+
+
 def retrieval_metrics(expected: List[str], retrieved: List[str], k: int = 5) -> Dict[str, float]:
     """聚合检索指标。expected/retrieved 均为商品 id 字符串列表。"""
     return {
         f"recall@{k}": recall_at_k(expected, retrieved, k),
         f"precision@{k}": precision_at_k(expected, retrieved, k),
+        f"hitRate@{k}": hit_rate_at_k(expected, retrieved, k),
         "mrr": mrr(expected, retrieved),
         f"ndcg@{k}": ndcg_at_k(expected, retrieved, k),
     }

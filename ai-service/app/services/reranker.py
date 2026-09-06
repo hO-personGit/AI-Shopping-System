@@ -82,8 +82,10 @@ class Reranker:
             hit = sum(1 for t in tokens if t in text)
             name = str(cand.get("name") or "").lower()
             name_hit = sum(1 for t in tokens if t in name)
-            # 词法命中 + 名称命中加权 + 原 RRF 分数小幅保持
-            score = hit * 1.0 + name_hit * 1.5 + float(cand.get("score") or 0) * 0.1
+            # 名称完整覆盖全部查询词 → 强相关信号
+            all_in_name = 1.0 if all(t in name for t in tokens) else 0.0
+            # 词法命中 + 名称命中加权 + 名称全匹配加权 + 原融合分小幅保持
+            score = hit * 1.0 + name_hit * 2.0 + all_in_name * 3.0 + float(cand.get("score") or 0) * 0.15
             item = dict(cand)
             item["rerankScore"] = round(score, 4)
             item["rerankSource"] = "lexical"

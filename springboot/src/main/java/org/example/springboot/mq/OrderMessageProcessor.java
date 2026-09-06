@@ -45,10 +45,18 @@ public class OrderMessageProcessor implements OrderMessageHandler {
     @Lazy // 与 OrderMessageProducer 存在循环依赖（producer 需回调 handler），用 @Lazy 打破
     private OrderMessageProducer producer;
 
+    /** RabbitMQ 是否启用：本地消息表模式（rabbit-enabled=false）不发送延迟关单消息，由超时扫描兜底 */
+    @org.springframework.beans.factory.annotation.Value("${app.mq.rabbit-enabled:false}")
+    private boolean rabbitEnabled;
+
     @Override
     public boolean handle(OrderMessage message) {
         if (message == null || message.getEventType() == null) {
             return false;
+        }
+        // 消费端透传 TraceId，保证 MQ 链路日志可串联
+        if (message.getTraceId() != null && !message.getTraceId().isBlank()) {
+            org.slf4j.MDC.put(org.example.springboot.filter.TraceIdFilter.TRACE_ID_MDC_KEY, message.getTraceId());
         }
         OrderEventType type = OrderEventType.fromName(message.getEventType());
         if (type == null) {
@@ -110,14 +118,18 @@ public class OrderMessageProcessor implements OrderMessageHandler {
         LOGGER.info("异步创建订单成功 orderId={} orderNo={}", order.getId(), order.getOrderNo());
 
         // 落库成功后，投递延迟关单消息（超时未支付自动取消）
-        OrderMessage timeoutMsg = OrderMessage.builder()
-                .eventType(OrderEventType.ORDER_TIMEOUT_CLOSE.name())
-                .orderId(order.getId())
-                .orderNo(order.getOrderNo())
-                .productId(order.getProductId())
-                .quantity(order.getQuantity())
-                .build();
-        producer.publish(timeoutMsg, true);
+        if (rabbitEnabled) {
+            OrderMessage timeoutMsg = OrderMessage.builder()
+                    .eventType(OrderEventType.ORDER_TIMEOUT_CLOSE.name())
+                    .orderId(order.getId())
+                    .orderNo(order.getOrderNo())
+                    .productId(order.getProductId())
+                    .quantity(order.getQuantity())
+                    .build();
+            producer.publish(timeoutMsg, true);
+        } else {
+            LOGGER.info("本地消息表模式：跳过 RabbitMQ 延迟关单，由超时订单扫描兜底 orderId={}", order.getId());
+        }
     }
 
     // ================= 支付成功（幂等，避免重复扣库存） =================

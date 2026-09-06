@@ -63,6 +63,12 @@ public class OrderService {
     @Autowired(required = false)
     private OrderMessageProducer orderMessageProducer;
 
+    @Autowired
+    private org.example.springboot.idgen.SnowflakeIdGenerator snowflakeIdGenerator;
+
+    @Autowired
+    private org.example.springboot.reliable.MessageReliabilityService messageReliabilityService;
+
     // ================= 下单 =================
 
     public Result<?> createOrder(Order order) {
@@ -79,15 +85,13 @@ public class OrderService {
             // 计算总价
             order.setTotalPrice(order.getPrice().multiply(BigDecimal.valueOf(order.getQuantity())));
 
-            // MQ 异步下单：Redis 预扣库存（防超卖）→ 发消息异步落库 → 延迟关单兜底
-            if (mqEnabled && orderMessageProducer != null) {
-                boolean deducted = stockDeductionUtil.tryDeduct(
-                        order.getProductId(), order.getQuantity(), product.getStock());
-                if (!deducted) {
-                    LOGGER.warn("Redis 预扣库存失败（并发超卖），productId={} quantity={}", order.getProductId(), order.getQuantity());
-                    return Result.error("-1", "库存不足，请稍后重试");
-                }
-                String orderNo = generateOrderNo();
+            // 可靠异步下单：雪花订单号 + 本地消息表（订单落库与消息登记同事务，定时任务可靠投递）
+            if (mqEnabled) {
+                String orderNo = snowflakeIdGenerator.nextIdStr();
+                order.setOrderNo(orderNo);
+                order.setStatus(OrderStatus.PENDING_PAYMENT.getCode());
+                order.setLastStatus(OrderStatus.PENDING_PAYMENT.getCode());
+                order.setRefundStatus(0);
                 OrderMessage message = OrderMessage.builder()
                         .eventType(OrderEventType.ORDER_CREATE.name())
                         .orderNo(orderNo)
@@ -100,11 +104,12 @@ public class OrderService {
                         .recvAddress(order.getRecvAddress())
                         .recvPhone(order.getRecvPhone())
                         .remark(order.getRemark())
+                        .timestamp(System.currentTimeMillis())
+                        .traceId(org.slf4j.MDC.get(org.example.springboot.filter.TraceIdFilter.TRACE_ID_MDC_KEY))
                         .build();
-                orderMessageProducer.publish(message, false);
-                LOGGER.info("MQ 异步下单已提交，订单号：{}", orderNo);
-                // 异步模式下订单由消费者落库，此处返回业务订单号标识
-                order.setOrderNo(orderNo);
+                // 同一事务：订单落库 + PENDING 消息登记，业务成功消息必不丢
+                messageReliabilityService.createOrderWithMessage(order, message);
+                LOGGER.info("本地消息表异步下单已提交，订单号：{}", orderNo);
                 return Result.success(order);
             }
 

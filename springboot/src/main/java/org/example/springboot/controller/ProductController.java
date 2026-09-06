@@ -29,6 +29,7 @@ public class ProductController {
         return productService.deleteProduct(id);
     }
     @GetMapping("/{id}")
+    @org.example.springboot.ratelimit.RateLimit(key = "product-detail", permitsPerSecond = 200, capacity = 300)
     public Result<?> getProductById(@PathVariable Long id) {
         return productService.getProductById(id);
     }

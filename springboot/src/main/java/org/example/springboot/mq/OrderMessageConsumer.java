@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
  * <p>手动 ACK + 幂等处理：业务处理成功才 basicAck；失败重试（丢弃走死信队列，由重试策略决定）。
  */
 @Component
-@ConditionalOnProperty(name = "app.mq.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "app.mq.rabbit-enabled", havingValue = "true")
 public class OrderMessageConsumer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OrderMessageConsumer.class);
