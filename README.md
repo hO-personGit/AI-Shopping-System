@@ -75,7 +75,6 @@ flowchart LR
     AGENT --> LLM
     AGENT --> CACHE
     RA --> CACHE
-end
 ```
 
 **架构要点**
