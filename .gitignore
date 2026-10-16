@@ -1,0 +1,43 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vs/
+.vscode/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Java / SpringBoot
+springboot/target/
+springboot/files/
+springboot/src/main/resources/application.properties
+
+# Node / Vue
+vue/node_modules/
+vue/dist/
+vue/.cache/
+vue/npm-debug.log*
+vue/yarn-debug.log*
+vue/yarn-error.log*
+
+# Python / FastAPI
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/app/__pycache__/
+ai-service/app/services/__pycache__/
+ai-service/data/
+ai-service/.env
+*.pyc
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Database dumps can be huge; keep SQL docs only when intentional
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

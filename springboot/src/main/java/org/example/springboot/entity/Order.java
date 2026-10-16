@@ -1,0 +1,50 @@
+package org.example.springboot.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+
+@Data
+@TableName("`order`")
+public class Order {
+    @TableId(type = IdType.AUTO)
+    private Long id;
+
+    /** 业务订单号（幂等键，MQ 异步下单使用） */
+    private String orderNo;
+
+    /** 客户端幂等键（接口幂等，不落库） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String requestId;
+    private Long userId;
+    private BigDecimal totalPrice;
+    private Integer status;
+    private Integer lastStatus;
+    private String remark;
+    private Timestamp refundTime;
+    private Integer refundStatus;
+    private String refundReason;
+    private String recvAddress;
+    private String recvPhone;
+    private String recvName;
+    private Long productId;
+    private Integer quantity;
+    private BigDecimal price;
+    private Timestamp createdAt;
+    private Timestamp updatedAt;
+
+    @TableField(exist = false)
+    private User user;
+
+    @TableField(exist = false)
+    private Product product;
+
+    @TableField(exist = false)
+    private User merchant;
+
+} 
